@@ -14,10 +14,11 @@ import type { Tab } from "./core/Tab";
 import type { LayerTransform } from "./core/canvas/CanvasEngine";
 import type { ExportFormat } from "./core/canvas/types/ExportFormat";
 import { SaveAsDialog } from "./components/dialogs/SaveAsDialog";
+import type { SerializedCanvasState } from "./core/canvas/CanvasEngine";
 
 export default function App() {
   const [cropMode, setCropMode] = useState<CropMode>(CropMode.ReplaceLayer);
-  const { tabs, activeTabId, createTab, closeTab, setActive } = useTabs();
+  const { tabs, activeTabId, createTab, closeTab, setActive, hydrate } = useTabs();
   const editorRefs = useRef<Record<string, EditorRef | null>>({});
 
   const [openDialog, setOpenDialog] = useState(false);
@@ -43,6 +44,9 @@ export default function App() {
     layers: boolean;
     format: ExportFormat;
   } | null>(null);
+  const [pendingRestores, setPendingRestores] = useState<
+    Record<string, SerializedCanvasState>
+  >({});
 
   const [layers, setLayers] = useState<
     { id: string; name: string; visible: boolean }[]
@@ -112,7 +116,9 @@ export default function App() {
       setActiveLayerId(null);
       setActiveTransform(null);
     }
-  }, []);
+
+    persistState();
+  }, [persistState]);
 
   const applySelectionConfig = useCallback(
     (
@@ -146,6 +152,49 @@ export default function App() {
     if (!saveDialogOpen) return;
     refreshSavePreview(saveOptions.format);
   }, [saveDialogOpen, saveOptions.format, refreshSavePreview]);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("pagecutter-state");
+      if (!raw) return;
+      const data = JSON.parse(raw) as {
+        tabs?: Tab[];
+        activeTabId?: string | null;
+        cropMode?: CropMode;
+        selectionSubtool?: SelectionToolType;
+        selectionMode?: SelectionMode;
+        editors?: Record<string, SerializedCanvasState>;
+      };
+      if (data.tabs && data.tabs.length) {
+        hydrate(data.tabs, data.activeTabId ?? null);
+      }
+      if (data.cropMode) setCropMode(data.cropMode);
+      if (data.selectionSubtool) setSelectionSubtool(data.selectionSubtool);
+      if (data.selectionMode) setSelectionMode(data.selectionMode);
+      if (data.editors) {
+        setPendingRestores(data.editors);
+      }
+    } catch {
+      // ignore parse errors
+    }
+  }, [hydrate]);
+
+  useEffect(() => {
+    if (!tabs.length) return;
+    setTimeout(() => {
+      setPendingRestores((prev) => {
+        const next = { ...prev };
+        Object.keys(next).forEach((tabId) => {
+          const ed = editorRefs.current[tabId];
+          if (ed && next[tabId]) {
+            ed.restoreState(next[tabId]);
+            delete next[tabId];
+          }
+        });
+        return next;
+      });
+    }, 0);
+  }, [tabs]);
 
   const handleToolSelect = (tool: ToolType) => {
     setActiveTool(tool);
@@ -316,6 +365,10 @@ export default function App() {
     }
   };
 
+  useEffect(() => {
+    persistState();
+  }, [tabs, activeTabId, cropMode, selectionSubtool, selectionMode, persistState]);
+
   const handleOpenHere = () => {
     const input = document.createElement("input");
     input.type = "file";
@@ -441,6 +494,38 @@ export default function App() {
     ed.selectLayer(id);
     syncFromEditor(ed);
   };
+
+  const persistState = useCallback(() => {
+    const payload: {
+      tabs: Tab[];
+      activeTabId: string | null;
+      cropMode: CropMode;
+      selectionSubtool: SelectionToolType;
+      selectionMode: SelectionMode;
+      editors: Record<string, SerializedCanvasState>;
+    } = {
+      tabs,
+      activeTabId,
+      cropMode,
+      selectionSubtool,
+      selectionMode,
+      editors: {},
+    };
+
+    tabs.forEach((t) => {
+      const ed = editorRefs.current[t.id];
+      const snapshot = ed?.serializeState();
+      if (snapshot) {
+        payload.editors[t.id] = snapshot;
+      }
+    });
+
+    try {
+      localStorage.setItem("pagecutter-state", JSON.stringify(payload));
+    } catch {
+      // ignore quota errors
+    }
+  }, [tabs, activeTabId, cropMode, selectionMode, selectionSubtool]);
 
   const handleToggleVisibility = (id: string, v: boolean) => {
     const ed = getActiveEditor();

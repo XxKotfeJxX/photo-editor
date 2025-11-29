@@ -18,6 +18,13 @@ export interface LayerTransform {
   opacity: number;
 }
 
+export interface SerializedCanvasState {
+  canvas: any;
+  layers: HistoryLayer[];
+  activeLayerId: string | null;
+  size: { width: number; height: number };
+}
+
 type HistoryLayer = Pick<Layer, "id" | "name" | "visible" | "opacity">;
 type HistorySnapshot = {
   canvas: any;
@@ -338,9 +345,25 @@ export class CanvasEngine {
 
   private syncCanvasOrder(): void {
     const ordered = this.layers.getLayers();
+    const moveTo = (this.canvas as any).moveTo;
+    if (typeof moveTo === "function") {
+      ordered.forEach((layer, idx) => moveTo.call(this.canvas, layer.object, idx));
+      return;
+    }
+
+    const objects = this.canvas.getObjects();
+    let changed = false;
     ordered.forEach((layer, idx) => {
-      (this.canvas as any).moveTo(layer.object, idx);
+      const currentIdx = objects.indexOf(layer.object);
+      if (currentIdx === -1 || currentIdx === idx) return;
+      objects.splice(currentIdx, 1);
+      objects.splice(idx, 0, layer.object);
+      changed = true;
     });
+
+    if (changed) {
+      this.canvas.requestRenderAll();
+    }
   }
 
   setWorkspaceSize(width: number, height: number): void {
@@ -654,5 +677,68 @@ export class CanvasEngine {
       .catch(() => {
         this.suppressHistory = false;
       });
+  }
+
+  serializeState(): SerializedCanvasState {
+    const canvasJson = this.canvas.toJSON(["layerId", "layerName"]);
+    return {
+      canvas: canvasJson,
+      layers: this.layers.getLayers().map((l) => ({
+        id: l.id,
+        name: l.name,
+        visible: l.visible,
+        opacity: l.opacity,
+      })),
+      activeLayerId: this.layers.getActiveLayerId(),
+      size: {
+        width: this.canvas.getWidth() ?? 0,
+        height: this.canvas.getHeight() ?? 0,
+      },
+    };
+  }
+
+  async restoreState(state: SerializedCanvasState): Promise<void> {
+    if (!state) return;
+
+    this.suppressHistory = true;
+    this.selection.clear();
+    this.canvas.clear();
+
+    if (state.size.width > 0 && state.size.height > 0) {
+      this.workspaceLocked = true;
+      this.canvas.setWidth(state.size.width);
+      this.canvas.setHeight(state.size.height);
+      this.applyWorkspaceClip();
+    }
+
+    await this.canvas.loadFromJSON(state.canvas);
+
+    this.layers.clear();
+    const objs = this.canvas.getObjects();
+    state.layers.forEach((l, idx) => {
+      const obj =
+        objs.find((o) => (o as any).layerId === l.id) ?? objs[idx] ?? null;
+      if (!obj) return;
+      obj.visible = l.visible;
+      obj.opacity = l.opacity;
+      (obj as any).layerId = l.id;
+      (obj as any).layerName = l.name;
+      this.applyInteractivity(obj, this.allowObjectTransform);
+      this.layers.addLayer(obj, l.name, undefined, l.id);
+    });
+
+    if (state.activeLayerId) {
+      this.layers.setActiveLayer(state.activeLayerId);
+      const layer = this.layers.getActiveLayer();
+      if (layer) this.canvas.setActiveObject(layer.object);
+    }
+
+    this.syncCanvasOrder();
+    this.canvas.renderAll();
+    this.history = [];
+    this.historyIndex = -1;
+    this.suppressHistory = false;
+    this.recordHistory();
+    this.notifyChange();
   }
 }

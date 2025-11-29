@@ -33,6 +33,11 @@ export function useTabs() {
     syncFromEngine();
   };
 
+  const hydrate = (tabsData: Tab[], activeId: string | null): void => {
+    engine.hydrate(tabsData, activeId);
+    syncFromEngine();
+  };
+
   return {
     tabs,
     activeTabId,
@@ -41,5 +46,6 @@ export function useTabs() {
     closeTab,
     setActive,
     rename,
+    hydrate,
   };
 }

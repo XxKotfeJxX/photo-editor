@@ -51,4 +51,9 @@ export class TabsEngine {
       tab.name = name;
     }
   }
+
+  hydrate(tabs: Tab[], activeId: string | null): void {
+    this.tabs = tabs.map((t) => ({ id: t.id, name: t.name }));
+    this._activeTabId = activeId && this.tabs.some((t) => t.id === activeId) ? activeId : this.tabs[0]?.id ?? null;
+  }
 }

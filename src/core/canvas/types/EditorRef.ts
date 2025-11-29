@@ -4,6 +4,7 @@ import type { LayerTransform } from "../CanvasEngine";
 import type { SelectionToolType } from "../Tools/Selection/SelectionTool";
 import type { SelectionMode } from "./SelectionMode";
 import type { ExportFormat } from "./ExportFormat";
+import type { SerializedCanvasState } from "../CanvasEngine";
 
 export interface EditorRef {
   setTool(tool: ToolType): void;
@@ -36,4 +37,6 @@ export interface EditorRef {
   exportLayers(format: ExportFormat): Promise<
     { id: string; name: string; dataUrl: string }[]
   >;
+  serializeState(): SerializedCanvasState | null;
+  restoreState(state: SerializedCanvasState): Promise<void>;
 }

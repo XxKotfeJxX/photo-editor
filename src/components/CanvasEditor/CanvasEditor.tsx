@@ -27,6 +27,7 @@ import { UploadTool } from "../../core/canvas/Tools/UploadTool";
 import { CropMode } from "../../core/canvas/types/CropMode";
 import { SelectionMaskRenderer } from "../../core/canvas/SelectionMaskRenderer";
 import type { ExportFormat } from "../../core/canvas/types/ExportFormat";
+import type { SerializedCanvasState } from "../../core/canvas/CanvasEngine";
 
 
 
@@ -509,6 +510,18 @@ const CanvasEditor = forwardRef<EditorRef, CanvasEditorProps>(
 
       exportLayers(format: ExportFormat) {
         return engineRef.current?.exportLayers(format) ?? Promise.resolve([]);
+      },
+
+      serializeState(): SerializedCanvasState | null {
+        const engine = engineRef.current;
+        if (!engine) return null;
+        return engine.serializeState();
+      },
+
+      async restoreState(state: SerializedCanvasState) {
+        const engine = engineRef.current;
+        if (!engine) return;
+        await engine.restoreState(state);
       },
     }));
 
