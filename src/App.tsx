@@ -44,9 +44,7 @@ export default function App() {
     layers: boolean;
     format: ExportFormat;
   } | null>(null);
-  const [pendingRestores, setPendingRestores] = useState<
-    Record<string, SerializedCanvasState>
-  >({});
+  const pendingRestoresRef = useRef<Record<string, SerializedCanvasState>>({});
 
   const [layers, setLayers] = useState<
     { id: string; name: string; visible: boolean }[]
@@ -75,6 +73,38 @@ export default function App() {
     typeof window !== "undefined" &&
     typeof (window as any).showDirectoryPicker === "function";
 
+  const persistState = useCallback(() => {
+    const payload: {
+      tabs: Tab[];
+      activeTabId: string | null;
+      cropMode: CropMode;
+      selectionSubtool: SelectionToolType;
+      selectionMode: SelectionMode;
+      editors: Record<string, SerializedCanvasState>;
+    } = {
+      tabs,
+      activeTabId,
+      cropMode,
+      selectionSubtool,
+      selectionMode,
+      editors: {},
+    };
+
+    tabs.forEach((t) => {
+      const ed = editorRefs.current[t.id];
+      const snapshot = ed?.serializeState();
+      if (snapshot) {
+        payload.editors[t.id] = snapshot;
+      }
+    });
+
+    try {
+      localStorage.setItem("pagecutter-state", JSON.stringify(payload));
+    } catch {
+      // ignore quota errors
+    }
+  }, [tabs, activeTabId, cropMode, selectionMode, selectionSubtool]);
+
   const refreshSavePreview = useCallback(
     async (format: ExportFormat) => {
       const ed = getActiveEditor();
@@ -92,33 +122,36 @@ export default function App() {
     [activeTabId]
   );
 
-  const syncFromEditor = useCallback((ed: EditorRef | null) => {
-    if (!ed) return;
+  const syncFromEditor = useCallback(
+    (ed: EditorRef | null) => {
+      if (!ed) return;
 
-    const realLayers = ed.getLayers();
-    const active = ed.getActiveLayer();
-    const t = ed.getActiveLayerTransform();
+      const realLayers = ed.getLayers();
+      const active = ed.getActiveLayer();
+      const t = ed.getActiveLayerTransform();
 
-    setLayers(
-      realLayers.map((l) => ({
-        id: l.id,
-        name: l.name,
-        visible: l.visible,
-      }))
-    );
+      setLayers(
+        realLayers.map((l) => ({
+          id: l.id,
+          name: l.name,
+          visible: l.visible,
+        }))
+      );
 
-    if (active) {
-      setActiveLayerId(active.id);
-      setOpacity(active.opacity);
-      setVisible(active.visible);
-      setActiveTransform(t);
-    } else {
-      setActiveLayerId(null);
-      setActiveTransform(null);
-    }
+      if (active) {
+        setActiveLayerId(active.id);
+        setOpacity(active.opacity);
+        setVisible(active.visible);
+        setActiveTransform(t);
+      } else {
+        setActiveLayerId(null);
+        setActiveTransform(null);
+      }
 
-    persistState();
-  }, [persistState]);
+      persistState();
+    },
+    [persistState]
+  );
 
   const applySelectionConfig = useCallback(
     (
@@ -172,7 +205,7 @@ export default function App() {
       if (data.selectionSubtool) setSelectionSubtool(data.selectionSubtool);
       if (data.selectionMode) setSelectionMode(data.selectionMode);
       if (data.editors) {
-        setPendingRestores(data.editors);
+        pendingRestoresRef.current = data.editors;
       }
     } catch {
       // ignore parse errors
@@ -182,17 +215,15 @@ export default function App() {
   useEffect(() => {
     if (!tabs.length) return;
     setTimeout(() => {
-      setPendingRestores((prev) => {
-        const next = { ...prev };
-        Object.keys(next).forEach((tabId) => {
-          const ed = editorRefs.current[tabId];
-          if (ed && next[tabId]) {
-            ed.restoreState(next[tabId]);
-            delete next[tabId];
-          }
-        });
-        return next;
+      const next = { ...pendingRestoresRef.current };
+      Object.keys(next).forEach((tabId) => {
+        const ed = editorRefs.current[tabId];
+        if (ed && next[tabId]) {
+          ed.restoreState(next[tabId]);
+          delete next[tabId];
+        }
       });
+      pendingRestoresRef.current = next;
     }, 0);
   }, [tabs]);
 
@@ -494,38 +525,6 @@ export default function App() {
     ed.selectLayer(id);
     syncFromEditor(ed);
   };
-
-  const persistState = useCallback(() => {
-    const payload: {
-      tabs: Tab[];
-      activeTabId: string | null;
-      cropMode: CropMode;
-      selectionSubtool: SelectionToolType;
-      selectionMode: SelectionMode;
-      editors: Record<string, SerializedCanvasState>;
-    } = {
-      tabs,
-      activeTabId,
-      cropMode,
-      selectionSubtool,
-      selectionMode,
-      editors: {},
-    };
-
-    tabs.forEach((t) => {
-      const ed = editorRefs.current[t.id];
-      const snapshot = ed?.serializeState();
-      if (snapshot) {
-        payload.editors[t.id] = snapshot;
-      }
-    });
-
-    try {
-      localStorage.setItem("pagecutter-state", JSON.stringify(payload));
-    } catch {
-      // ignore quota errors
-    }
-  }, [tabs, activeTabId, cropMode, selectionMode, selectionSubtool]);
 
   const handleToggleVisibility = (id: string, v: boolean) => {
     const ed = getActiveEditor();

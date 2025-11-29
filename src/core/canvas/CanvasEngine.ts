@@ -606,17 +606,18 @@ export class CanvasEngine {
 
   private recordHistory(): void {
     if (this.suppressHistory) return;
-    const objects = this.canvas.getObjects().map((o) => {
-      const base =
+    const objects = this.canvas
+      .getObjects()
+      .map((o) =>
         typeof (o as any).toObject === "function"
           ? (o as any).toObject()
-          : {};
-      return {
-        ...base,
-        layerId: (o as any).layerId ?? null,
-        layerName: (o as any).layerName ?? null,
-      };
-    });
+          : {}
+      )
+      .map((obj: any) => ({
+        ...obj,
+        layerId: obj.layerId ?? null,
+        layerName: obj.layerName ?? null,
+      }));
 
     const snapshot: HistorySnapshot = {
       canvas: { objects },
@@ -680,7 +681,10 @@ export class CanvasEngine {
   }
 
   serializeState(): SerializedCanvasState {
-    const canvasJson = this.canvas.toJSON(["layerId", "layerName"]);
+    const canvasJson =
+      typeof (this.canvas as any).toJSON === "function"
+        ? (this.canvas as any).toJSON(["layerId", "layerName"])
+        : {};
     return {
       canvas: canvasJson,
       layers: this.layers.getLayers().map((l) => ({
