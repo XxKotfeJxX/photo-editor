@@ -9,7 +9,6 @@ const menus: Record<
   file: {
     label: "File",
     items: [
-      { label: "Save" },
       { label: "Save as" },
       { label: "Settings" },
     ],
@@ -32,7 +31,6 @@ interface TopBarProps {
   onUndo: () => void;
   onRedo: () => void;
   onSaveAs: () => void;
-  onSave: () => void;
 }
 
 export function TopBar({
@@ -42,7 +40,6 @@ export function TopBar({
   onUndo,
   onRedo,
   onSaveAs,
-  onSave,
 }: TopBarProps) {
   const [open, setOpen] = useState<MenuKey>(null);
   const barRef = useRef<HTMLDivElement | null>(null);
@@ -124,7 +121,6 @@ export function TopBar({
                           if (item.label === "Zoom in") onZoomIn();
                           if (item.label === "Zoom out") onZoomOut();
                           if (item.label === "Reset zoom") onResetZoom();
-                          if (item.label === "Save") onSave();
                           if (item.label === "Save as") onSaveAs();
                           item.onClick?.();
                         }}

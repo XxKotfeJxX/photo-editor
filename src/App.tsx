@@ -15,6 +15,19 @@ import type { LayerTransform } from "./core/canvas/CanvasEngine";
 import type { ExportFormat } from "./core/canvas/types/ExportFormat";
 import { SaveAsDialog } from "./components/dialogs/SaveAsDialog";
 import type { SerializedCanvasState } from "./core/canvas/CanvasEngine";
+import {
+  dataUrlToBlobSafe,
+  saveFilesToDisk,
+  type DownloadableFile,
+  getPickerSupport,
+  type SaveResult,
+} from "./utils/saveFile";
+
+type SaveOptions = {
+  merge: boolean;
+  layers: boolean;
+  format: ExportFormat;
+};
 
 export default function App() {
   const [cropMode, setCropMode] = useState<CropMode>(CropMode.ReplaceLayer);
@@ -28,22 +41,14 @@ export default function App() {
   const [selectionMode, setSelectionMode] =
     useState<SelectionMode>("replace");
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
-  const [saveOptions, setSaveOptions] = useState<{
-    merge: boolean;
-    layers: boolean;
-    format: ExportFormat;
-  }>({
+  const [saveOptions, setSaveOptions] = useState<SaveOptions>({
     merge: true,
     layers: false,
     format: "png",
   });
   const [savePreviewUrl, setSavePreviewUrl] = useState<string | null>(null);
-  const [saveDirectory, setSaveDirectory] = useState<any>(null);
-  const [lastSavedOptions, setLastSavedOptions] = useState<{
-    merge: boolean;
-    layers: boolean;
-    format: ExportFormat;
-  } | null>(null);
+  const [lastSavedOptions, setLastSavedOptions] =
+    useState<SaveOptions | null>(null);
   const pendingRestoresRef = useRef<Record<string, SerializedCanvasState>>({});
 
   const [layers, setLayers] = useState<
@@ -55,23 +60,22 @@ export default function App() {
   const [activeTransform, setActiveTransform] = useState<LayerTransform | null>(
     null
   );
+  const pickerSupport = getPickerSupport();
 
   const getActiveEditor = (): EditorRef | null =>
     activeTabId ? editorRefs.current[activeTabId] ?? null : null;
 
   const activeTab = tabs.find((t) => t.id === activeTabId) ?? null;
 
+  const getExtension = (format: ExportFormat) =>
+    format === "jpeg" || format === "jpg"
+      ? "jpg"
+      : format === "svg"
+      ? "svg"
+      : format;
+
   const sanitizeName = (name: string) =>
     name.replace(/[\\/:*?"<>|]+/g, "_").trim() || "export";
-
-  const dataUrlToBlob = async (dataUrl: string): Promise<Blob> => {
-    const res = await fetch(dataUrl);
-    return await res.blob();
-  };
-
-  const canUseDirPicker = () =>
-    typeof window !== "undefined" &&
-    typeof (window as any).showDirectoryPicker === "function";
 
   const persistState = useCallback(() => {
     const payload: {
@@ -148,9 +152,8 @@ export default function App() {
         setActiveTransform(null);
       }
 
-      persistState();
     },
-    [persistState]
+    []
   );
 
   const applySelectionConfig = useCallback(
@@ -227,6 +230,12 @@ export default function App() {
     }, 0);
   }, [tabs]);
 
+  useEffect(() => {
+    const handleUnload = () => persistState();
+    window.addEventListener("beforeunload", handleUnload);
+    return () => window.removeEventListener("beforeunload", handleUnload);
+  }, [persistState]);
+
   const handleToolSelect = (tool: ToolType) => {
     setActiveTool(tool);
     const ed = getActiveEditor();
@@ -267,109 +276,83 @@ export default function App() {
     refreshSavePreview(saveOptions.format);
   };
 
-  const handlePickDirectory = async () => {
-    if (!canUseDirPicker()) return;
-    try {
-      const dir = await (window as any).showDirectoryPicker();
-      setSaveDirectory(dir);
-    } catch {
-      // ignored
-    }
-  };
-
-  const buildExportFiles = async (options: {
-    merge: boolean;
-    layers: boolean;
-    format: ExportFormat;
-  }) => {
+  const buildExportFiles = async (
+    options: SaveOptions
+  ): Promise<DownloadableFile[]> => {
     const ed = getActiveEditor();
     if (!ed) return [];
 
     const format = options.format;
-    const merged: { name: string; dataUrl: string }[] = [];
+    const ext = getExtension(format);
+    const files: { name: string; dataUrl: string }[] = [];
 
     if (options.merge) {
       const dataUrl = await ed.exportMerged(format);
-      merged.push({
+      files.push({
         name: sanitizeName(activeTab?.name ?? "image"),
         dataUrl,
       });
     }
 
-    let layerExports: { name: string; dataUrl: string }[] = [];
     if (options.layers) {
       const layersData = await ed.exportLayers(format);
-      layerExports = layersData.map((l) => ({
-        name: sanitizeName(`${activeTab?.name ?? "image"}-${l.name}`),
-        dataUrl: l.dataUrl,
-      }));
+      layersData.forEach((l) =>
+        files.push({
+          name: sanitizeName(`${activeTab?.name ?? "image"}-${l.name}`),
+          dataUrl: l.dataUrl,
+        })
+      );
     }
 
-    return [...merged, ...layerExports];
+    const withBlobs = await Promise.all(
+      files.map(async (file) => ({
+        name: file.name,
+        extension: ext,
+        blob: await dataUrlToBlobSafe(file.dataUrl),
+      }))
+    );
+
+    return withBlobs;
   };
 
-  const saveToDirectory = async (
-    dir: any,
-    files: { name: string; dataUrl: string }[],
-    ext: string
-  ) => {
-    const perm = await dir.queryPermission?.({ mode: "readwrite" });
-    if (perm !== "granted") {
-      const ask = await dir.requestPermission?.({ mode: "readwrite" });
-      if (ask !== "granted") {
-        throw new Error("Permission denied");
-      }
+  const performSave = async (
+    options: SaveOptions,
+    extra?: {
+      allowPicker?: boolean;
+      skipDownloadOnAbort?: boolean;
+      fallbackOnUnsupported?: boolean;
     }
+  ): Promise<SaveResult> => {
+    const all = await buildExportFiles(options);
+    if (!all.length) return "aborted";
 
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
-      const fileHandle = await dir.getFileHandle(`${file.name}.${ext}`, {
-        create: true,
-      });
-      const writable = await fileHandle.createWritable();
-      const blob = await dataUrlToBlob(file.dataUrl);
-      await writable.write(blob);
-      await writable.close();
-    }
-  };
-
-  const downloadFallback = (
-    files: { name: string; dataUrl: string }[],
-    ext: string
-  ) => {
-    files.forEach((file, idx) => {
-      const link = document.createElement("a");
-      link.href = file.dataUrl;
-      link.download = `${file.name || `export-${idx + 1}`}.${ext}`;
-      link.click();
+    const result = await saveFilesToDisk(all, {
+      allowPicker: extra?.allowPicker ?? false,
+      skipDownloadOnAbort: extra?.skipDownloadOnAbort ?? false,
+      fallbackOnUnsupported: extra?.fallbackOnUnsupported ?? true,
     });
+
+    if (result === "picker" || result === "download") {
+      setLastSavedOptions(options);
+    }
+
+    return result;
   };
 
   const handleSaveAsConfirm = async () => {
-    const all = await buildExportFiles(saveOptions);
-    if (!all.length) return;
+    const result = await performSave(saveOptions, {
+      allowPicker: false,
+    });
+    if (result === "picker" || result === "download") setSaveDialogOpen(false);
+  };
 
-    const format = saveOptions.format;
-    const ext =
-      format === "jpeg" || format === "jpg"
-        ? "jpg"
-        : format === "svg"
-        ? "svg"
-        : format;
-
-    setLastSavedOptions(saveOptions);
-
-    try {
-      if (saveDirectory && canUseDirPicker()) {
-        await saveToDirectory(saveDirectory, all, ext);
-      } else {
-        downloadFallback(all, ext);
-      }
-    } catch {
-      downloadFallback(all, ext);
-    }
-
-    setSaveDialogOpen(false);
+  const handleBrowseSave = async () => {
+    const result = await performSave(saveOptions, {
+      allowPicker: true,
+      skipDownloadOnAbort: true,
+      fallbackOnUnsupported: true,
+    });
+    if (result === "picker" || result === "download") setSaveDialogOpen(false);
   };
 
   const handleQuickSave = async () => {
@@ -378,30 +361,13 @@ export default function App() {
       setSaveDialogOpen(true);
       return;
     }
-    const all = await buildExportFiles(opts);
-    if (!all.length) return;
-    const format = opts.format;
-    const ext =
-      format === "jpeg" || format === "jpg"
-        ? "jpg"
-        : format === "svg"
-        ? "svg"
-        : format;
 
-    try {
-      if (saveDirectory && canUseDirPicker()) {
-        await saveToDirectory(saveDirectory, all, ext);
-      } else {
-        downloadFallback(all, ext);
-      }
-    } catch {
-      downloadFallback(all, ext);
-    }
+    await performSave(opts, { allowPicker: false, skipDownloadOnAbort: false });
   };
 
   useEffect(() => {
     persistState();
-  }, [tabs, activeTabId, cropMode, selectionSubtool, selectionMode, persistState]);
+  }, [tabs, activeTabId, cropMode, selectionSubtool, selectionMode]);
 
   const handleOpenHere = () => {
     const input = document.createElement("input");
@@ -630,7 +596,6 @@ export default function App() {
         onRedo={handleRedo}
         onOpenFile={() => setOpenDialog(true)}
         onSaveAs={handleSaveAsOpen}
-        onSave={handleQuickSave}
         onToolSelect={handleToolSelect}
         activeTool={activeTool}
         selectionSubtool={selectionSubtool}
@@ -672,11 +637,10 @@ export default function App() {
         options={saveOptions}
         previewUrl={savePreviewUrl}
         onOptionsChange={(opts) => setSaveOptions(opts)}
-        directorySupported={canUseDirPicker()}
-        directoryLabel={saveDirectory ? saveDirectory.name ?? "Selected" : ""}
-        onPickDirectory={handlePickDirectory}
         onClose={() => setSaveDialogOpen(false)}
         onConfirm={handleSaveAsConfirm}
+        onBrowse={handleBrowseSave}
+        browseSupported={pickerSupport.any}
       />
     </>
   );

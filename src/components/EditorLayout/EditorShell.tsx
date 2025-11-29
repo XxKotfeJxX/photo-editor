@@ -31,7 +31,6 @@ interface EditorShellProps {
   onRedo: () => void;
   onOpenFile: () => void;
   onSaveAs: () => void;
-  onSave: () => void;
   onToolSelect: (tool: ToolType) => void;
   activeTool: ToolType | null;
   selectionSubtool: SelectionToolType;
@@ -65,7 +64,6 @@ export function EditorShell({
   onRedo,
   onOpenFile,
   onSaveAs,
-  onSave,
   onToolSelect,
   activeTool,
   selectionSubtool,
@@ -92,7 +90,6 @@ export function EditorShell({
         onUndo={onUndo}
         onRedo={onRedo}
         onSaveAs={onSaveAs}
-        onSave={onSave}
       />
 
       <TabsBar
