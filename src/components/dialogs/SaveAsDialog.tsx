@@ -11,6 +11,7 @@ interface SaveAsDialogProps {
   options: SaveAsOptions;
   previewUrl: string | null;
   onOptionsChange: (opts: SaveAsOptions) => void;
+  directorySupported?: boolean;
   directoryLabel?: string;
   onPickDirectory?: () => void;
   onClose: () => void;
@@ -29,6 +30,7 @@ export function SaveAsDialog({
   options,
   previewUrl,
   onOptionsChange,
+  directorySupported = true,
   directoryLabel,
   onPickDirectory,
   onClose,
@@ -117,10 +119,16 @@ export function SaveAsDialog({
                 className="bg-gray-700 hover:bg-gray-600 px-3 py-2 rounded text-sm"
                 onClick={onPickDirectory}
                 type="button"
+                disabled={!directorySupported}
               >
                 Browse
               </button>
             </div>
+            {!directorySupported && (
+              <div className="text-xs text-red-300 ml-32">
+                Folder selection requires a Chromium-based browser (e.g. Chrome/Edge) over HTTPS.
+              </div>
+            )}
           </div>
         </div>
 

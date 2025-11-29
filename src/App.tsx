@@ -185,10 +185,7 @@ export default function App() {
   };
 
   const handlePickDirectory = async () => {
-    if (!canUseDirPicker()) {
-      alert("Directory picker is not supported in this browser.");
-      return;
-    }
+    if (!canUseDirPicker()) return;
     try {
       const dir = await (window as any).showDirectoryPicker();
       setSaveDirectory(dir);
@@ -588,6 +585,7 @@ export default function App() {
         options={saveOptions}
         previewUrl={savePreviewUrl}
         onOptionsChange={(opts) => setSaveOptions(opts)}
+        directorySupported={canUseDirPicker()}
         directoryLabel={saveDirectory ? saveDirectory.name ?? "Selected" : ""}
         onPickDirectory={handlePickDirectory}
         onClose={() => setSaveDialogOpen(false)}
