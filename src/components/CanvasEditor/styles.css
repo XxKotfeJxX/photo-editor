@@ -1,0 +1,14 @@
+.canvas-editor-crop {
+  cursor: crosshair !important;
+}
+
+.canvas-editor-move {
+  cursor: grab !important;
+}
+
+.canvas-editor-resize {
+  cursor: nwse-resize !important;
+}
+.canvas-editor-rotate {
+  cursor: alias !important;
+}
