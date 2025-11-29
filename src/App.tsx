@@ -241,7 +241,10 @@ export default function App() {
     const ed = getActiveEditor();
     setActiveTool(ToolType.Selection);
     ed?.setTool(ToolType.Selection);
-    applySelectionConfig(ed, { subtool: type });
+    if (ed) {
+      ed.setSelectionSubtool(type);
+      ed.setSelectionMode(selectionMode);
+    }
   };
 
   const handleSelectMode = (mode: SelectionMode) => {
