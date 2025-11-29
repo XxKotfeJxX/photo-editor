@@ -512,7 +512,7 @@ export class CanvasEngine {
 
   private toRasterDataUrl(format: ExportFormat): string {
     const fmt = format === "jpg" ? "jpeg" : format;
-    return this.canvas.toDataURL({ format: fmt as any });
+    return this.canvas.toDataURL({ format: fmt as any, multiplier: 1 });
   }
 
   async exportMerged(format: ExportFormat): Promise<string> {

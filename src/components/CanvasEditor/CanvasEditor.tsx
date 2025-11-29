@@ -1,10 +1,4 @@
-import {
-  useEffect,
-  useRef,
-  forwardRef,
-  useImperativeHandle,
-  useState,
-} from "react";
+import { useEffect, useRef, forwardRef, useImperativeHandle, useState } from "react";
 
 import {
   Image as FabricImage,
@@ -132,7 +126,6 @@ const CanvasEditor = forwardRef<EditorRef, CanvasEditorProps>(
       width: number;
       height: number;
     } | null>(null);
-    const [zoom, setZoom] = useState(1);
 
     const changeHandlerRef = useRef<(() => void) | null>(null);
     const clipboardRef = useRef<ClipboardPayload | null>(null);
@@ -215,7 +208,6 @@ const CanvasEditor = forwardRef<EditorRef, CanvasEditorProps>(
           setWorkspaceSize({ width, height });
         }
         engine.resetZoom();
-        setZoom(engine.getZoom());
         imgObj.set({
           left: 0,
           top: 0,
@@ -487,21 +479,18 @@ const CanvasEditor = forwardRef<EditorRef, CanvasEditorProps>(
         const engine = engineRef.current;
         if (!engine) return;
         engine.zoomIn();
-        setZoom(engine.getZoom());
       },
 
       zoomOut() {
         const engine = engineRef.current;
         if (!engine) return;
         engine.zoomOut();
-        setZoom(engine.getZoom());
       },
 
       resetZoom() {
         const engine = engineRef.current;
         if (!engine) return;
         engine.resetZoom();
-        setZoom(engine.getZoom());
       },
 
       undo() {
